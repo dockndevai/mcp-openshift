@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.dockndevai/mcp-openshift",
-  "description": "Operate an OpenShift / Kubernetes cluster — projects, pods, logs, deployments, routes — safe by default.",
+  "description": "Safe-by-default MCP for OpenShift / Kubernetes: projects, pods, logs, deployments, routes.",
   "repository": {
     "url": "https://github.com/dockndevai/mcp-openshift",
     "source": "github"
