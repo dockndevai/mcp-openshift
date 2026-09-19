@@ -1,0 +1,59 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.dockndevai/mcp-openshift",
+  "description": "Operate an OpenShift / Kubernetes cluster — projects, pods, logs, deployments, routes — safe by default.",
+  "repository": {
+    "url": "https://github.com/dockndevai/mcp-openshift",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@dockndevai/mcp-openshift",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "OPENSHIFT_SERVER",
+          "description": "Cluster API server URL, e.g. https://api.cluster.example.com:6443.",
+          "isRequired": true,
+          "isSecret": false
+        },
+        {
+          "name": "OPENSHIFT_TOKEN",
+          "description": "Bearer token (console → user menu → Copy login command → Display Token, or `oc whoami -t`).",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "OPENSHIFT_USERNAME",
+          "description": "Username for the cluster's local identity provider (alternative to a token).",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "OPENSHIFT_PASSWORD",
+          "description": "Password for the local identity provider. Sent only to the cluster's OAuth server.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "OPENSHIFT_CA_CERT",
+          "description": "Path to the cluster CA bundle (PEM) for TLS verification.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "OPENSHIFT_MODE",
+          "description": "Access mode: read-only | read-write | admin. Starts read-only; writes need read-write.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "name": "@dockndevai/mcp-openshift",
+  "mcpName": "io.github.dockndevai/mcp-openshift",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for OpenShift / Kubernetes — projects, pods, logs, deployments, routes, builds and more, with username/password (local IdP) or token auth and safe-by-default access modes and guards.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dockndevai/mcp-openshift.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dockndevai/mcp-openshift/issues"
+  },
+  "homepage": "https://dockndevai.github.io/",
+  "bin": {
+    "mcp-openshift": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "openshift",
+    "kubernetes",
+    "k8s",
+    "oc",
+    "devops",
+    "cluster",
+    "llm",
+    "ai"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "undici": "^7.16.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}
