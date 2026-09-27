@@ -80,6 +80,8 @@ Enforced by [`src/security.ts`](src/security.ts) — defence in depth on top of 
 - **Human-in-the-loop** — apply, delete, and scale-to-zero pause and ask a person to approve via MCP elicitation.
 - **`OPENSHIFT_AUDIT_LOG`** — a JSON audit line per guarded op on stderr; **Secret values are redacted** from all output.
 
+**Optional AI risk guard.** Set `OPENSHIFT_GUARD_MODE=monitor|enforce` to have `apply_resource` / `delete_resource` consult a local [laya-guard](https://github.com/dockndevai/laya-guard) daemon (`pipx install laya-guard && laya-guard`) that classifies the operation allow/confirm/block before it runs. Runs *after* the apply/delete gates; only tightens, never grants; fails closed.
+
 There is a bundled skill, [`openshift-safe-operations`](.claude/skills/openshift-safe-operations/SKILL.md), that teaches an agent how to authenticate (including from the browser console), the safety rules, and the standard triage/operate workflows. See also [SECURITY.md](SECURITY.md).
 
 ## Developing

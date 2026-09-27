@@ -24,13 +24,17 @@ export const adminTools: ToolDef[] = [
         namespace: z.string().optional().describe("Namespace / project (omit for cluster-scoped kinds)."),
       },
     },
-    handler: async (args, { client, policy, confirm }) => {
+    handler: async (args, { client, policy, confirm, guard }) => {
       const kind = args.kind as string;
       const name = args.name as string;
       const ns = args.namespace as string | undefined;
       const { dryRun } = policy.guard({ tool: "delete_resource", capability: "admin", destructive: true, namespace: ns });
       const target = `${kind}/${name}${ns ? ` in ${ns}` : ""}`;
       if (dryRun) return textResult(`[dry-run] Would delete ${target}.`);
+      await guard.enforce(
+        { tool: "delete_resource", command: `kubectl delete ${kind}/${name} -n ${ns ?? "default"}`, context: target },
+        confirm,
+      );
       const ok = await confirm.confirm({ action: "delete resource", target });
       if (!ok.approved) return textResult(`Deletion cancelled — ${ok.reason}.`);
       return jsonResult(await client.deleteResource(kind, name, ns, false));

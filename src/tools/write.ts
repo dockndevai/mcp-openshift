@@ -71,7 +71,7 @@ export const writeTools: ToolDef[] = [
         manifest: z.record(z.string(), z.any()).describe("The full resource manifest (apiVersion, kind, metadata, spec…)."),
       },
     },
-    handler: async (args, { client, policy, confirm }) => {
+    handler: async (args, { client, policy, confirm, guard }) => {
       const manifest = args.manifest as Record<string, unknown>;
       const md = (manifest.metadata ?? {}) as { name?: string; namespace?: string };
       const { dryRun } = policy.guard({
@@ -82,6 +82,10 @@ export const writeTools: ToolDef[] = [
       });
       const target = `${manifest.kind as string}/${md.name ?? "?"}${md.namespace ? ` in ${md.namespace}` : ""}`;
       if (dryRun) return jsonResult(await client.apply(manifest, true));
+      await guard.enforce(
+        { tool: "apply_resource", command: `kubectl apply ${manifest.kind}/${md.name ?? "?"} -n ${md.namespace ?? "default"}`, context: target },
+        confirm,
+      );
       const ok = await confirm.confirm({ action: "apply (create/update) resource", target });
       if (!ok.approved) return textResult(`Apply cancelled — ${ok.reason}.`);
       return jsonResult(await client.apply(manifest, false));
