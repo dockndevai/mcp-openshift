@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-12
+
+### Security
+- Dependency/security maintenance: `npm audit fix` resolved 6 advisories (1 critical: `proxy-addr`
+  IP-spoofing via IPv4-mapped IPv6 trust subnet; 2 high: `@modelcontextprotocol/sdk` OAuth client
+  credential-leak to an attacker-chosen authorization server, `source-map-js` event-loop DoS; 3
+  moderate: `fast-uri`, `hono`, `ip-address`) via transitive lockfile updates only — no direct
+  dependency range changed.
+- Routine patch bumps for `@types/node`, `tsx`, `undici`, `vitest`, `zod` within their existing
+  semver ranges. `npm audit` now reports 0 vulnerabilities.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added
