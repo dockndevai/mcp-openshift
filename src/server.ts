@@ -17,7 +17,7 @@ export function buildServer(config: AppConfig): { server: McpServer; client: Ope
   const policy = new SecurityPolicy(config.security);
   const client = new OpenShiftClient(config.connection);
 
-  const server = new McpServer({ name: "openshift", version: "0.2.1" });
+  const server = new McpServer({ name: "openshift", version: "0.2.2" });
   const guard = new GuardClient(loadGuardConfig());
   const ctx: ToolContext = { client, policy, confirm: makeConfirmer(server), guard };
 
