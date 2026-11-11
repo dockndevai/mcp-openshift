@@ -24,6 +24,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `kubectl.kubernetes.io/last-applied-configuration` annotation (a copy of the values, also returned by
   `get_resource`) are redacted too; and the object returned by `delete_resource` / `scale` goes through the same
   redaction. Keys and sizes are kept.
+- **Credentials in pod specs, ConfigMaps and Routes no longer reach the model.** `get_resource` and
+  `list_resources` (and the object returned by `delete_resource` / `scale`) returned the full object, so
+  `spec.containers[].env[].value` (and `initContainers`, every pod template under Deployments, DeploymentConfigs,
+  StatefulSets, DaemonSets, Jobs, CronJobs, Builds, ...), ConfigMap `data` / `binaryData`, Route `tls.key`,
+  command-line arguments such as `--password x`, and the `last-applied-configuration` annotation (a copy of the
+  manifest) were returned verbatim. They now pass through `redactObject` (`src/redact.ts`): env values (and probe
+  headers, Template parameters) whose name looks secret are replaced by `<redacted, N bytes>` (`valueFrom`
+  references stay visible), other values are scrubbed for URL passwords / token shapes / `key=value` pairs / PEM
+  keys, ConfigMap entries with secret-shaped keys or credential-looking values are masked, Route `tls.key` and
+  BuildConfig webhook secrets are masked, and event messages and API error text are scrubbed. Secrets nested in a
+  List or Template are redacted too. Heuristic and by name (see SECURITY.md for what is not caught); on by default,
+  `OPENSHIFT_REDACT_OBJECTS=false` turns off everything but the Secret redaction, which is never optional.
 - **Pod logs are redacted (best effort).** `pod_logs` returned whatever the workload wrote, so a credential it
   logged reached the model. Logs now pass through a line-oriented, linear-time redactor (`src/redact.ts`) that masks
   PEM private keys, values of keys ending in `password`/`secret`/`token`/`api_key`/... (including

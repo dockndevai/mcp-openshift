@@ -47,7 +47,7 @@ export const readTools: ToolDef[] = [
       title: "List resources",
       description:
         "List resources of a kind, optionally in a namespace and filtered by a label selector. Returns the raw " +
-        "Kubernetes/OpenShift list (secret values are redacted). Works for core and OpenShift kinds " +
+        "Kubernetes/OpenShift list (secret values are always redacted; credential-shaped env values and ConfigMap entries are masked). Works for core and OpenShift kinds " +
         "(pods, deployments, deploymentconfigs, routes, services, builds, imagestreams, …).",
       inputSchema: {
         kind,
@@ -73,7 +73,7 @@ export const readTools: ToolDef[] = [
       title: "Get a resource",
       description:
         "Fetch a single resource by kind + name (+ namespace for namespaced kinds), with its full spec/status. " +
-        "Secret values are redacted.",
+        "Secret values are always redacted; credential-shaped env values and ConfigMap entries are masked.",
       inputSchema: { kind, name: z.string().describe("Resource name"), namespace },
     },
     handler: async (a, { client, policy }) => {

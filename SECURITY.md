@@ -37,7 +37,41 @@ privileged automation and grant it the least it needs.
   object returned by `delete_resource` / `scale`), `data` and `stringData` values are replaced with
   `<redacted, N bytes>` (keys are kept) and the `kubectl.kubernetes.io/last-applied-configuration` annotation,
   which holds a copy of the values, is redacted. List items are redacted by the kind you asked for, since the
-  API omits `kind` on them. `apply_resource` returns only the applied object's identity.
+  API omits `kind` on them. `apply_resource` returns only the applied object's identity. This is not optional, and
+  a Secret nested in a List or Template is redacted too.
+- **Credentials in other objects are redacted, best effort (`OPENSHIFT_REDACT_OBJECTS`).** `get_resource`,
+  `list_resources` (so also `list_events`) and the objects returned by `delete_resource` / `scale` can carry credentials
+  that are not in a Secret, as can the text of API error responses. This pass is heuristic, on by default, and
+  `OPENSHIFT_REDACT_OBJECTS=false` (or `0`, `no`, `off`; any other value, including a typo, leaves it on) returns
+  those objects unchanged (Secrets stay redacted). What it masks:
+  - `env` entries (containers, initContainers, ephemeralContainers, and every pod template: Pods, Deployments,
+    DeploymentConfigs, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs' `jobTemplate`, Build / BuildConfig
+    strategies, Template `objects`), probe `httpHeaders` and Template `parameters`: the `value` of an entry whose
+    **name** ends in a secret-ish word (the same list as the log redactor, plus `key`, `auth`, `pass`, `pwd`, `dsn`,
+    `jwt`, `bearer`, `connection_string`; case-insensitive, `_`/`-` optional, so `DB_PASSWORD`, `apiKey`,
+    `SENTRY_DSN`) becomes `<redacted, N bytes>`. Every other value is still scrubbed for URL passwords, token shapes,
+    `key=value` pairs and PEM private keys. `valueFrom` references are kept: a `secretKeyRef` names a Secret and does
+    not hold the value.
+  - `command` and `args`: each element is scrubbed (`--db-password=x`), and the element after a secret-named flag
+    (`--password x`) is masked.
+  - ConfigMap `data` and `binaryData`: an entry whose **key** is secret-shaped (`db.password`, `tls.key`,
+    `credentials.json`, `id_rsa`, `*.p12`/`*.jks`, `.dockerconfigjson`) is masked; any other text value is scrubbed
+    like a log (so one `client_secret=...` line in a properties file is masked and the rest stays readable); a
+    `binaryData` entry is decoded and masked as a whole when the text inside holds a credential.
+  - `Route` `tls.key` / `spec.tls.key` is masked. `certificate`, `caCertificate` and `destinationCACertificate` are
+    public by design and stay readable, except that a private key pasted into one is masked.
+  - `BuildConfig` webhook trigger secrets; `Event` messages; passwords in any `scheme://user:password@host` URL in any
+    string (for example `spec.source.git.uri`).
+  - The `kubectl.kubernetes.io/last-applied-configuration` annotation, which holds a copy of the manifest including
+    env values, is parsed and redacted the same way (replaced by `<redacted>` if it is not JSON).
+  This is **heuristic and mostly by name**. It does **not** catch a credential stored under an innocuous name with an
+  innocuous shape (`CONFIG=<random string>`), a password written in a ConfigMap file that is not `key=value`,
+  `key: value` or `"key":"value"` shaped, an opaque binary blob under a neutral name (a keystore called `blob.bin`),
+  or a credential in a field this list does not name (another annotation, a field of a kind outside the supported
+  table). It over-redacts on purpose: a variable such as `GOOGLE_APPLICATION_CREDENTIALS` (a path) or `SMTP_AUTH` is
+  masked. Responses are normalised to plain JSON, and nesting deeper than 64 levels is replaced by a marker rather
+  than inspected. `apply_resource` returns only the applied object's identity, and `rollout_restart` returns text, so
+  neither needs this pass.
 - **Log output is redacted, best effort.** Output from `pod_logs` is scanned, and credential-shaped text is masked before it reaches the model.
   This is **heuristic defence in depth, not a guarantee**: it cannot know what a workload considers secret. It is on
   by default; `OPENSHIFT_REDACT_LOGS=false` (or `0`, `no`, `off`) turns it off (any other value, including a typo, leaves it on). What it masks
