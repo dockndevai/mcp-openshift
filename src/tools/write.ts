@@ -80,10 +80,16 @@ export const writeTools: ToolDef[] = [
     handler: async (args, { client, policy, confirm, guard }) => {
       const manifest = args.manifest as Record<string, unknown>;
       const md = (manifest.metadata ?? {}) as { name?: string; namespace?: string };
+      // Where the object will really land: a Namespace / Project manifest's own name, else metadata.namespace.
+      const mKind = manifest.kind as string | undefined;
+      const mApiVersion = manifest.apiVersion as string | undefined;
+      const targetNs = mKind
+        ? await client.targetNamespace(mKind, md.name, md.namespace, mApiVersion || "v1")
+        : md.namespace;
       const { dryRun } = policy.guard({
         tool: "apply_resource",
         capability: "write",
-        namespace: md.namespace,
+        namespace: targetNs,
         requiresApply: true,
       });
       const target = `${manifest.kind as string}/${md.name ?? "?"}${md.namespace ? ` in ${md.namespace}` : ""}`;

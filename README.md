@@ -73,7 +73,7 @@ Auth mode is chosen automatically (override with `OPENSHIFT_AUTH`):
 Enforced by [`src/security.ts`](src/security.ts) — defence in depth on top of your account's cluster RBAC:
 
 - **`OPENSHIFT_MODE`** — `read-only` (default) → `read-write` → `admin`. Tools above the mode aren't registered.
-- **`OPENSHIFT_NAMESPACE_ALLOWLIST` / `OPENSHIFT_PROTECTED_NAMESPACES`** — confine writes to named namespaces; system namespaces (`kube-*`, `openshift`, `openshift-*`, `default`) are readable but never mutable.
+- **`OPENSHIFT_NAMESPACE_ALLOWLIST` / `OPENSHIFT_PROTECTED_NAMESPACES`** — confine writes to named namespaces; system namespaces (`kube-*`, `openshift`, `openshift-*`, `default`) are readable but never mutable. For a namespace or project the check is on its own name.
 - **`OPENSHIFT_ALLOW_APPLY`** — creating/updating resources needs this flag on top of read-write, plus a human confirmation.
 - **`OPENSHIFT_ALLOW_DELETE`** — deletes need admin mode plus this flag, plus confirmation.
 - **`OPENSHIFT_DRY_RUN`** — sends writes with Kubernetes `dryRun=All`: validated and admission-checked, but nothing persists.

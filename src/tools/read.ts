@@ -7,7 +7,7 @@ const kind = z
   .describe(
     "Resource kind — e.g. pod, deployment, deploymentconfig, service, route, configmap, secret, " +
       "build, buildconfig, imagestream, statefulset, daemonset, job, cronjob, pvc, node, project. " +
-      "Singular or plural accepted.",
+      "Singular or plural accepted; other kinds are rejected.",
   );
 const namespace = z.string().optional().describe("Namespace / project. Required for namespaced kinds; omit for cluster-scoped.");
 

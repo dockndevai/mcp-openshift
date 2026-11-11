@@ -24,7 +24,7 @@ export class OpenShiftError extends Error {
 }
 
 /** Common kinds → their API group/version, plural resource, and scope. */
-interface KindInfo {
+export interface KindInfo {
   apiVersion: string;
   resource: string;
   namespaced: boolean;
@@ -54,10 +54,45 @@ const KINDS: Record<string, KindInfo> = {
   project: { apiVersion: "project.openshift.io/v1", resource: "projects", namespaced: false },
 };
 
-/** Resolve a user-supplied kind ("Deployment", "deployment", "deployments") to its API info. */
+/** Aliases for kinds people commonly abbreviate. */
+const ALIASES: Record<string, string> = { pvc: "persistentvolumeclaim", ns: "namespace", sa: "serviceaccount", cm: "configmap", svc: "service" };
+
+/** Kinds whose own name IS a namespace: acting on one acts on that namespace and everything in it. */
+const NAMESPACE_RESOURCES = new Set(["namespaces", "projects", "projectrequests"]);
+export function isNamespaceKind(info: KindInfo): boolean {
+  return NAMESPACE_RESOURCES.has(info.resource);
+}
+
+/** The table entry for a user-supplied kind ("Deployment", "deployment", "deployments", "ingresses", "pvc"), if known. */
+function lookupKind(kind: string): KindInfo | undefined {
+  const k = kind.trim().toLowerCase();
+  const alias = ALIASES[k];
+  if (alias) return KINDS[alias];
+  return KINDS[k] ?? KINDS[k.replace(/(es|s)$/, "")] ?? KINDS[k.replace(/s$/, "")];
+}
+
+/**
+ * Resolve a user-supplied kind to its API info. A kind that is not in the table is an error: guessing a plural and
+ * core `v1` addressed the wrong API path for any custom resource (and a wrong guess can hit a different object).
+ */
 export function resolveKind(kind: string): KindInfo {
-  const k = kind.toLowerCase();
-  return KINDS[k] ?? KINDS[k.replace(/s$/, "")] ?? { apiVersion: "v1", resource: `${k.replace(/s$/, "")}s`, namespaced: true };
+  const info = lookupKind(kind);
+  if (!info) {
+    throw new OpenShiftError(
+      400,
+      `Unknown kind '${kind}'. Supported kinds: ${Object.keys(KINDS).join(", ")}. ` +
+        "Custom resources can be created or updated with apply_resource, which resolves the kind from the manifest's apiVersion.",
+    );
+  }
+  return info;
+}
+
+/** `v1`, `apps/v1`, `route.openshift.io/v1`: a DNS-style group, then a version. Nothing that can alter a request path. */
+const API_VERSION = /^([a-z0-9]([-a-z0-9.]*[a-z0-9])?\/)?[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+export function assertApiVersion(apiVersion: string): void {
+  if (!API_VERSION.test(apiVersion)) {
+    throw new OpenShiftError(400, `Invalid apiVersion '${apiVersion}': expected 'v1' or '<group>/<version>' (e.g. apps/v1).`);
+  }
 }
 
 function apiRoot(apiVersion: string): string {
@@ -117,6 +152,8 @@ export class OpenShiftClient {
   readonly maxResults: number;
   private readonly tokens: TokenProvider;
   private readonly dispatcher: ReturnType<typeof makeDispatcher>;
+  /** Discovery results per apiVersion (resource lists never change within a session in a way that matters here). */
+  private readonly discovered = new Map<string, Promise<Array<{ name: string; kind: string; namespaced: boolean }>>>();
 
   constructor(conn: Connection) {
     this.server = conn.server;
@@ -124,6 +161,41 @@ export class OpenShiftClient {
     this.maxResults = conn.maxResults;
     this.tokens = createTokenProvider(conn);
     this.dispatcher = makeDispatcher(conn.caCertPath, conn.insecureTLS);
+  }
+
+  /**
+   * API info for a kind. Kinds in the table resolve locally; any other kind is resolved by API discovery against the
+   * given apiVersion (the manifest's, for apply), and is an error when there is none or the group does not serve it.
+   */
+  async kindInfo(kind: string, apiVersion?: string): Promise<KindInfo> {
+    const known = lookupKind(kind);
+    // A kind from the table is used as is unless the caller names a different group/version for it (e.g. a custom
+    // resource that reuses a common kind name): then the API server says what that group serves.
+    if (known && (!apiVersion || apiVersion === known.apiVersion)) return known;
+    if (!apiVersion) return resolveKind(kind); // throws the "unknown kind" error
+    assertApiVersion(apiVersion);
+    let list = this.discovered.get(apiVersion);
+    if (!list) {
+      list = this.json<{ resources?: Array<{ name: string; kind: string; namespaced: boolean }> }>(apiRoot(apiVersion)).then(
+        (r) => r.resources ?? [],
+      );
+      list.catch(() => this.discovered.delete(apiVersion));
+      this.discovered.set(apiVersion, list);
+    }
+    const hit = (await list).find((r) => r.kind === kind && !r.name.includes("/"));
+    if (!hit) throw new OpenShiftError(400, `Kind '${kind}' is not served by ${apiVersion}.`);
+    return { apiVersion, resource: hit.name, namespaced: hit.namespaced };
+  }
+
+  /**
+   * The namespace a call acts on, which is what the policy must check. It is not always the `namespace` argument:
+   * a namespace / project (or project request) is cluster-scoped and its own name is the namespace it affects, and a
+   * cluster-scoped kind affects no namespace. Throws for an unknown kind, so scope is never guessed.
+   */
+  async targetNamespace(kind: string, name: string | undefined, ns: string | undefined, apiVersion?: string): Promise<string | undefined> {
+    const info = await this.kindInfo(kind, apiVersion);
+    if (isNamespaceKind(info)) return name || undefined;
+    return info.namespaced ? ns || undefined : undefined;
   }
 
   async ensureAuth(): Promise<void> {
@@ -261,9 +333,10 @@ export class OpenShiftClient {
     const apiVersion = (manifest.apiVersion as string) || "v1";
     const kind = (manifest.kind as string) || "";
     if (!kind) throw new OpenShiftError(400, "Manifest is missing 'kind'.");
-    const info = resolveKind(kind);
+    const info = await this.kindInfo(kind, apiVersion);
     const m = (manifest.metadata ?? {}) as { name?: string; namespace?: string };
     if (!m.name) throw new OpenShiftError(400, "Manifest metadata.name is required.");
+    if (info.namespaced && !m.namespace) throw new OpenShiftError(400, `Manifest metadata.namespace is required for ${kind}.`);
     const ns = info.namespaced ? m.namespace : undefined;
     const q = new URLSearchParams({ fieldManager: "mcp-openshift", force: "true" });
     if (dryRun) q.set("dryRun", "All");
@@ -317,7 +390,7 @@ export class OpenShiftClient {
     ns: string | undefined,
     apiVersion?: string,
   ): Promise<string | undefined> {
-    const info = resolveKind(kind);
+    const info = await this.kindInfo(kind, apiVersion);
     try {
       const obj = await this.json<KObj>(
         itemPath(apiVersion || info.apiVersion, info.resource, name, info.namespaced ? ns : undefined),
