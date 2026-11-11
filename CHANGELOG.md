@@ -11,6 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   60 s request timeout, and a timeout fell through to "approved" (the `OPENSHIFT_ALLOW_DELETE` /
   `OPENSHIFT_ALLOW_APPLY` gate had already passed). A prompt nobody answered therefore auto-approved a
   destructive operation. A timeout is now a refusal, and the wait defaults to 5 minutes.
+- **Protected-namespace and allowlist checks no longer skipped for a namespace or project.** `delete_resource`
+  with kind `namespace` / `project` and no `namespace` argument passed `undefined` to the policy, so
+  `kube-system` could be deleted with only admin mode and `OPENSHIFT_ALLOW_DELETE` (a harmless `namespace`
+  argument next to a protected name had the same effect). `apply_resource` had the same hole for a `Namespace` /
+  `Project` / `ProjectRequest` manifest. The object's own name is now what the policy checks.
+- `apiVersion` from a manifest is validated (`v1` or `<group>/<version>`) before it is placed in a request path;
+  previously a crafted value (`../`, `#`, `?`) could send the apply to a different path than the namespace the
+  policy had checked. `apply_resource` also now rejects a namespaced manifest with no `metadata.namespace`.
 
 ### Added
 - **Approvals are bound to the exact action.** The prompt shows the tool, the full (secret-redacted)
@@ -23,6 +31,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `delete_resource` passes the approved uid and resourceVersion to the API server as delete preconditions.
 - `OPENSHIFT_REQUIRE_HUMAN_APPROVAL=true` — refuse destructive ops when the client cannot elicit.
 - `delete_resource` on a namespace or project asks the human to type its name.
+
+### Changed
+- **Unknown kinds fail clearly.** `resolveKind` fell back to core `v1` and a guessed plural for any kind not in
+  its table, so e.g. deleting a custom resource addressed the wrong API path. `get_resource`, `list_resources`,
+  `delete_resource` and `scale` now return an "Unknown kind" error listing the supported kinds. `apply_resource`
+  resolves other kinds (custom resources) by API discovery on the manifest's `apiVersion`.
+- Kind lookup also accepts `-es` plurals (`ingresses`) and the documented `pvc` alias (plus `ns`, `sa`, `cm`, `svc`).
 
 Tracking issue: https://github.com/dockndevai/mcp-core/issues/1
 

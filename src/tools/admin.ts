@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isNamespaceKind } from "../openshift/client.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult, textResult } from "./types.js";
 
@@ -28,7 +29,10 @@ export const adminTools: ToolDef[] = [
       const kind = args.kind as string;
       const name = args.name as string;
       const ns = args.namespace as string | undefined;
-      const { dryRun } = policy.guard({ tool: "delete_resource", capability: "admin", destructive: true, namespace: ns });
+      // What the policy checks is where the delete lands: a namespace / project's own name, else the namespace argument.
+      const info = await client.kindInfo(kind);
+      const targetNs = await client.targetNamespace(kind, name, ns);
+      const { dryRun } = policy.guard({ tool: "delete_resource", capability: "admin", destructive: true, namespace: targetNs });
       const target = `${kind}/${name}${ns ? ` in ${ns}` : ""}`;
       if (dryRun) return textResult(`[dry-run] Would delete ${target}.`);
       await guard.enforce(
@@ -36,8 +40,8 @@ export const adminTools: ToolDef[] = [
         confirm,
       );
       // Deleting a namespace / project removes everything in it: the one delete that also asks the human to type the name.
-      const normalized = kind.toLowerCase().replace(/s$/, "");
-      const isNamespace = normalized === "namespace" || normalized === "project";
+      const isNamespace = isNamespaceKind(info);
+      const normalized = info.resource === "projects" ? "project" : "namespace";
       const ok = await confirm.confirm({
         action: isNamespace ? `delete ${normalized} (and everything in it)` : "delete resource",
         target: isNamespace ? name : target,

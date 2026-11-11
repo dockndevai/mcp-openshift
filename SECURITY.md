@@ -39,8 +39,13 @@ privileged automation and grant it the least it needs.
 
 ## Limitations
 
-- Namespace allowlist/protection is enforced on the namespace a call names. `apply_resource` derives
-  the namespace from the manifest's `metadata.namespace`.
+- Namespace allowlist/protection is enforced on the namespace a call acts on. For a namespace or project
+  (kind `namespace` / `project`, including a `Namespace`, `Project` or `ProjectRequest` manifest) that is the
+  object's own name, whatever `namespace` argument accompanies it; otherwise it is the `namespace` argument,
+  and for `apply_resource` the manifest's `metadata.namespace` (required for namespaced kinds).
+- `get_resource`, `list_resources`, `delete_resource` and `scale` accept the kinds in the built-in table; any other
+  kind is rejected with an "Unknown kind" error rather than guessed. `apply_resource` resolves other kinds by
+  API discovery on the manifest's `apiVersion`. `apiVersion` must be `v1` or `<group>/<version>`.
 - `apply_resource` trusts the manifest you pass; it is a server-side apply as your account. There is
   no content filtering beyond the human-confirmation prompt and dry-run. Keep `OPENSHIFT_ALLOW_APPLY`
   off unless you need it.
