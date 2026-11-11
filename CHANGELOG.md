@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `kube-system` could be deleted with only admin mode and `OPENSHIFT_ALLOW_DELETE` (a harmless `namespace`
   argument next to a protected name had the same effect). `apply_resource` had the same hole for a `Namespace` /
   `Project` / `ProjectRequest` manifest. The object's own name is now what the policy checks.
+- **Secret values leaked from `list_resources`.** Redaction only recognised an object whose own `kind` was
+  `Secret`, but the API server omits `kind` on list items, so `list_resources kind=secret` returned every Secret's
+  `data` verbatim. Lists are now redacted by the requested kind (and `SecretList`); `stringData` and the
+  `kubectl.kubernetes.io/last-applied-configuration` annotation (a copy of the values, also returned by
+  `get_resource`) are redacted too; and the object returned by `delete_resource` / `scale` goes through the same
+  redaction. Keys and sizes are kept.
 - `apiVersion` from a manifest is validated (`v1` or `<group>/<version>`) before it is placed in a request path;
   previously a crafted value (`../`, `#`, `?`) could send the apply to a different path than the namespace the
   policy had checked. `apply_resource` also now rejects a namespaced manifest with no `metadata.namespace`.
