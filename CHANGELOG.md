@@ -24,6 +24,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `kubectl.kubernetes.io/last-applied-configuration` annotation (a copy of the values, also returned by
   `get_resource`) are redacted too; and the object returned by `delete_resource` / `scale` goes through the same
   redaction. Keys and sizes are kept.
+- **Pod logs are redacted (best effort).** `pod_logs` returned whatever the workload wrote, so a credential it
+  logged reached the model. Logs now pass through a line-oriented, linear-time redactor (`src/redact.ts`) that masks
+  PEM private keys, values of keys ending in `password`/`secret`/`token`/`api_key`/... (including
+  `Authorization: Bearer ...`), `Bearer` tokens, passwords in `scheme://user:pass@host` URLs, and well-known token
+  shapes (JWTs / service-account tokens, OpenShift `sha256~` tokens, AWS access key ids, GCP, GitHub, GitLab, Slack,
+  Stripe, npm, Vault, SendGrid). On by default; `OPENSHIFT_REDACT_LOGS=false` disables it. Heuristic defence in
+  depth, not a guarantee: a bare random secret with no known shape or key name is not caught. See SECURITY.md for
+  the full list and trade-offs.
 - `apiVersion` from a manifest is validated (`v1` or `<group>/<version>`) before it is placed in a request path;
   previously a crafted value (`../`, `#`, `?`) could send the apply to a different path than the namespace the
   policy had checked. `apply_resource` also now rejects a namespaced manifest with no `metadata.namespace`.

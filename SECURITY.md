@@ -37,8 +37,32 @@ privileged automation and grant it the least it needs.
   object returned by `delete_resource` / `scale`), `data` and `stringData` values are replaced with
   `<redacted, N bytes>` (keys are kept) and the `kubectl.kubernetes.io/last-applied-configuration` annotation,
   which holds a copy of the values, is redacted. List items are redacted by the kind you asked for, since the
-  API omits `kind` on them. `apply_resource` returns only the applied object's identity. Pod logs
-  (`pod_logs`) are returned as the workload produced them and are not redacted.
+  API omits `kind` on them. `apply_resource` returns only the applied object's identity.
+- **Log output is redacted, best effort.** Output from `pod_logs` is scanned, and credential-shaped text is masked before it reaches the model.
+  This is **heuristic defence in depth, not a guarantee**: it cannot know what a workload considers secret. It is on
+  by default; `OPENSHIFT_REDACT_LOGS=false` (or `0`, `no`, `off`) turns it off (any other value, including a typo, leaves it on). What it masks
+  (each as `[REDACTED]`, `[REDACTED:<kind>]` or `[REDACTED PRIVATE KEY]`, with the rest of the line kept):
+  - PEM private-key blocks (RSA, EC, OpenSSH, encrypted, PGP, plain `PRIVATE KEY`), including a block that is
+    unterminated or whose `BEGIN` line was cut off by `tail` (its bare base64 body lines are dropped);
+    certificates and public keys are left alone.
+  - The value of any `key=value`, `key: value`, `"key":"value"` or `--flag value` whose key **ends in**
+    `password`, `passwd`, `passphrase`, `secret`, `token`, `credential(s)`, `authorization`, `api_key`, `access_key`,
+    `secret_key`, `secret_access_key`, `private_key`, `signing_key`, `encryption_key`, `master_key`, `account_key`, `auth_key`,
+    `primary_key`, `secondary_key` (case-insensitive, `_`/`-` optional), plus `X-Amz-Signature` and `sig`. For
+    `Authorization:` the scheme (`Bearer`, `Basic`, ...) is kept and the credential after it is masked.
+  - `Bearer <token>` anywhere (the token must contain a digit, so prose like "bearer authentication" is untouched).
+  - The password in `scheme://user:PASSWORD@host` URLs (database and registry DSNs, `https://x-access-token:...@github.com`).
+  - Well-known token shapes, with no key name needed: JWTs (which includes Kubernetes service-account tokens), OpenShift
+    `sha256~` tokens, AWS access key ids, GCP API keys and OAuth tokens, GitHub, GitLab, Slack, Stripe, npm, Vault and
+    SendGrid tokens.
+  What it does **not** catch: a secret with no recognisable shape and no telling key name (a bare random password, a
+  raw AWS secret access key on its own, a password in a sentence), secrets split across lines (other than PEM
+  blocks), encoded or obfuscated secrets, cookies and session ids, scheme-less `user:pass@host` DSNs, and personal data.
+  Deliberate trade-offs: the value after a secret-named key is masked even when it is only a reference name
+  (`imagePullSecret: regcred`); an unquoted value ends at whitespace, a comma, `;`, `&`, `<`, `>` or a quote, so a password
+  containing one of those is only partly masked; and `null`/`true`/`none`-style words, `$VAR` references and
+  already-redacted markers are left as they are. The pass is line oriented and linear in the output size (no
+  backtracking-prone patterns; a 1 MB single line is covered by a test). With `OPENSHIFT_REDACT_LOGS=false` the logs are returned exactly as the workload produced them.
 - **TLS.** Prefer `OPENSHIFT_CA_CERT` (trust the cluster CA). `OPENSHIFT_INSECURE_TLS=true` disables
   certificate verification and MITM protection — development clusters only.
 

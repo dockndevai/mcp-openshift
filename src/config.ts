@@ -56,6 +56,12 @@ function bool(name: string, fallback: boolean): boolean {
   return ["1", "true", "yes", "on"].includes(v.toLowerCase());
 }
 
+/** On unless explicitly turned off, so a typo or an unrecognised value can never silently disable redaction. */
+function redactLogsEnabled(name: string): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  return !(v === "false" || v === "0" || v === "no" || v === "off");
+}
+
 function list(name: string): string[] {
   const v = process.env[name];
   if (!v) return [];
@@ -119,6 +125,7 @@ export function loadConfig(): AppConfig {
       dryRun: bool("OPENSHIFT_DRY_RUN", false),
       auditLog: bool("OPENSHIFT_AUDIT_LOG", true),
       requireHumanApproval: bool("OPENSHIFT_REQUIRE_HUMAN_APPROVAL", false),
+      redactLogs: redactLogsEnabled("OPENSHIFT_REDACT_LOGS"),
     },
   };
 }

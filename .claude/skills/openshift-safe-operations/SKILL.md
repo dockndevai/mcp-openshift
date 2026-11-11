@@ -59,7 +59,7 @@ The cluster's **RBAC for your account is the real boundary**; these flags are de
 - **Dry-run** — `OPENSHIFT_DRY_RUN=true` sends writes with Kubernetes `dryRun=All`: the API validates
   and admission-checks them but persists nothing.
 - **Audit + redaction** — every guarded op emits a JSON audit line to stderr; Secret `data` values
-  are redacted from all output.
+  are redacted from resource output, and `pod_logs` output is scrubbed of credential-shaped text on a best-effort basis (`OPENSHIFT_REDACT_LOGS`, on by default; heuristic, not a guarantee).
 
 ### Rules the agent should follow
 1. **Start read-only and diagnose first.** Prefer `list_resources`, `get_resource`, `pod_logs`,

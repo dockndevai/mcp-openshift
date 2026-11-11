@@ -102,7 +102,7 @@ export const readTools: ToolDef[] = [
         tailLines: a.tail_lines as number | undefined,
         previous: a.previous as boolean | undefined,
       });
-      return textResult(logs || "(no log output)");
+      return textResult(policy.redactLogOutput(logs) || "(no log output)");
     },
   },
   {
