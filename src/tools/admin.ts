@@ -35,9 +35,20 @@ export const adminTools: ToolDef[] = [
         { tool: "delete_resource", command: `kubectl delete ${kind}/${name} -n ${ns ?? "default"}`, context: target },
         confirm,
       );
-      const ok = await confirm.confirm({ action: "delete resource", target });
+      // Deleting a namespace / project removes everything in it: the one delete that also asks the human to type the name.
+      const normalized = kind.toLowerCase().replace(/s$/, "");
+      const isNamespace = normalized === "namespace" || normalized === "project";
+      const ok = await confirm.confirm({
+        action: isNamespace ? `delete ${normalized} (and everything in it)` : "delete resource",
+        target: isNamespace ? name : target,
+        typed: isNamespace,
+        // uid@resourceVersion of the exact object. Limit: any write (including status updates) changes
+        // resourceVersion, which fails closed; a recreate under the same name changes the uid.
+        probe: () => client.resourceVersion(kind, name, ns),
+      });
       if (!ok.approved) return textResult(`Deletion cancelled — ${ok.reason}.`);
-      return jsonResult(await client.deleteResource(kind, name, ns, false));
+      // The pinned token is also sent as delete preconditions, so the API server rejects a stale delete.
+      return jsonResult(await client.deleteResource(kind, name, ns, false, ok.receipt.version));
     },
   },
 ];

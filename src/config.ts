@@ -118,6 +118,7 @@ export function loadConfig(): AppConfig {
       allowApply: bool("OPENSHIFT_ALLOW_APPLY", false),
       dryRun: bool("OPENSHIFT_DRY_RUN", false),
       auditLog: bool("OPENSHIFT_AUDIT_LOG", true),
+      requireHumanApproval: bool("OPENSHIFT_REQUIRE_HUMAN_APPROVAL", false),
     },
   };
 }
