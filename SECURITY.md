@@ -33,7 +33,12 @@ privileged automation and grant it the least it needs.
   = `human` or `flag-only`).
 - **Preview with dry-run.** `OPENSHIFT_DRY_RUN=true` sends writes with Kubernetes `dryRun=All`: the
   API validates and runs admission but persists nothing.
-- **Secrets are redacted.** Secret `data` values never reach the model — only the keys and byte sizes.
+- **Secrets are redacted.** In every response that can carry a Secret (`get_resource`, `list_resources`, and the
+  object returned by `delete_resource` / `scale`), `data` and `stringData` values are replaced with
+  `<redacted, N bytes>` (keys are kept) and the `kubectl.kubernetes.io/last-applied-configuration` annotation,
+  which holds a copy of the values, is redacted. List items are redacted by the kind you asked for, since the
+  API omits `kind` on them. `apply_resource` returns only the applied object's identity. Pod logs
+  (`pod_logs`) are returned as the workload produced them and are not redacted.
 - **TLS.** Prefer `OPENSHIFT_CA_CERT` (trust the cluster CA). `OPENSHIFT_INSECURE_TLS=true` disables
   certificate verification and MITM protection — development clusters only.
 
