@@ -3,13 +3,14 @@
  *
  * Talks to the API server over HTTPS with a bearer token (from auth.ts), honouring a private-CA TLS
  * dispatcher. A 401 invalidates the cached token and retries once (so an expired password token
- * transparently re-logs in). Secret `data` values are redacted before anything reaches the model.
+ * transparently re-logs in). Secret values are redacted (src/redact.ts) before anything reaches the model.
  *
  * Reads cover core Kubernetes and OpenShift resources; writes are limited and deliberate (scale,
  * rollout restart, server-side apply); deletes live behind admin mode + a flag + confirmation.
  */
 import type { Connection } from "../config.js";
 import { createTokenProvider, type TokenProvider } from "./auth.js";
+import { redactSecret } from "../redact.js";
 import { makeDispatcher } from "./tls.js";
 
 export class OpenShiftError extends Error {
@@ -108,22 +109,7 @@ function itemPath(apiVersion: string, resource: string, name: string, ns?: strin
 
 type KObj = Record<string, unknown> & { kind?: string; metadata?: Record<string, unknown> };
 
-/** Strip base64 secret values so credentials never reach the model; keep keys + sizes. */
-function redactSecret(obj: KObj): KObj {
-  if (obj.kind === "Secret" && obj.data && typeof obj.data === "object") {
-    const data = obj.data as Record<string, string>;
-    const red: Record<string, string> = {};
-    for (const k of Object.keys(data)) red[k] = `<redacted, ${Buffer.from(data[k] ?? "", "base64").length} bytes>`;
-    return { ...obj, data: red };
-  }
-  return obj;
-}
-function redactList(obj: KObj): KObj {
-  if (Array.isArray((obj as { items?: unknown }).items)) {
-    return { ...obj, items: ((obj as { items: KObj[] }).items).map(redactSecret) };
-  }
-  return obj;
-}
+const isSecrets = (info: KindInfo) => info.resource === "secrets";
 
 /** `uid@resourceVersion` of an object, or undefined when either is missing. */
 export function versionToken(obj: KObj | undefined): string | undefined {
@@ -285,12 +271,15 @@ export class OpenShiftClient {
     q.set("limit", String(Math.min(this.maxResults, opts.limit ?? this.maxResults)));
     if (opts.labelSelector) q.set("labelSelector", opts.labelSelector);
     const path = `${collectionPath(info.apiVersion, info.resource, info.namespaced ? ns : undefined)}?${q.toString()}`;
-    return redactList(await this.json<KObj>(path));
+    return redactSecret(await this.json<KObj>(path), isSecrets(info));
   }
 
   async getByKind(kind: string, name: string, ns?: string): Promise<KObj> {
     const info = resolveKind(kind);
-    return redactSecret(await this.json<KObj>(itemPath(info.apiVersion, info.resource, name, info.namespaced ? ns : undefined)));
+    return redactSecret(
+      await this.json<KObj>(itemPath(info.apiVersion, info.resource, name, info.namespaced ? ns : undefined)),
+      isSecrets(info),
+    );
   }
 
   async podLogs(ns: string, name: string, opts: { container?: string; tailLines?: number; previous?: boolean } = {}): Promise<string> {
@@ -309,11 +298,14 @@ export class OpenShiftClient {
   async scale(kind: string, ns: string, name: string, replicas: number, dryRun: boolean): Promise<KObj> {
     const info = resolveKind(kind);
     const path = `${itemPath(info.apiVersion, info.resource, name, ns)}/scale${dryRun ? "?dryRun=All" : ""}`;
-    return this.json<KObj>(path, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/merge-patch+json" },
-      body: JSON.stringify({ spec: { replicas } }),
-    });
+    return redactSecret(
+      await this.json<KObj>(path, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/merge-patch+json" },
+        body: JSON.stringify({ spec: { replicas } }),
+      }),
+      isSecrets(info),
+    );
   }
 
   /** Trigger a rolling restart by stamping the pod template (strategic merge). */
@@ -366,16 +358,19 @@ export class OpenShiftClient {
     const info = resolveKind(kind);
     const path = `${itemPath(info.apiVersion, info.resource, name, info.namespaced ? ns : undefined)}${dryRun ? "?dryRun=All" : ""}`;
     const pin = parseVersionToken(expectedVersion);
-    if (!pin) return this.json<Record<string, unknown>>(path, { method: "DELETE" });
-    return this.json<Record<string, unknown>>(path, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apiVersion: "v1",
-        kind: "DeleteOptions",
-        preconditions: { uid: pin.uid, resourceVersion: pin.resourceVersion },
-      }),
-    });
+    // The API server may answer a delete with the deleted object, so it is redacted like any other read.
+    const out = pin
+      ? await this.json<Record<string, unknown>>(path, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            apiVersion: "v1",
+            kind: "DeleteOptions",
+            preconditions: { uid: pin.uid, resourceVersion: pin.resourceVersion },
+          }),
+        })
+      : await this.json<Record<string, unknown>>(path, { method: "DELETE" });
+    return redactSecret(out, isSecrets(info));
   }
 
   /**
