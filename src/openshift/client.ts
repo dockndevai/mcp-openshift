@@ -10,7 +10,7 @@
  */
 import type { Connection } from "../config.js";
 import { createTokenProvider, type TokenProvider } from "./auth.js";
-import { redactSecret } from "../redact.js";
+import { redactObject } from "../redact.js";
 import { makeDispatcher } from "./tls.js";
 
 export class OpenShiftError extends Error {
@@ -109,7 +109,6 @@ function itemPath(apiVersion: string, resource: string, name: string, ns?: strin
 
 type KObj = Record<string, unknown> & { kind?: string; metadata?: Record<string, unknown> };
 
-const isSecrets = (info: KindInfo) => info.resource === "secrets";
 
 /** `uid@resourceVersion` of an object, or undefined when either is missing. */
 export function versionToken(obj: KObj | undefined): string | undefined {
@@ -141,7 +140,11 @@ export class OpenShiftClient {
   /** Discovery results per apiVersion (resource lists never change within a session in a way that matters here). */
   private readonly discovered = new Map<string, Promise<Array<{ name: string; kind: string; namespaced: boolean }>>>();
 
-  constructor(conn: Connection) {
+  /** Whether the by-name redaction of non-Secret objects is on. Secrets are redacted regardless. */
+  private readonly redactObjects: boolean;
+
+  constructor(conn: Connection, opts: { redactObjects?: boolean } = {}) {
+    this.redactObjects = opts.redactObjects !== false;
     this.server = conn.server;
     this.timeoutMs = conn.timeoutMs;
     this.maxResults = conn.maxResults;
@@ -182,6 +185,11 @@ export class OpenShiftClient {
     const info = await this.kindInfo(kind, apiVersion);
     if (isNamespaceKind(info)) return name || undefined;
     return info.namespaced ? ns || undefined : undefined;
+  }
+
+  /** Everything that comes back from the cluster as an object goes through here before it is returned. */
+  private redact<T>(obj: T, info: KindInfo): T {
+    return redactObject(obj, info.resource, this.redactObjects);
   }
 
   async ensureAuth(): Promise<void> {
@@ -271,15 +279,12 @@ export class OpenShiftClient {
     q.set("limit", String(Math.min(this.maxResults, opts.limit ?? this.maxResults)));
     if (opts.labelSelector) q.set("labelSelector", opts.labelSelector);
     const path = `${collectionPath(info.apiVersion, info.resource, info.namespaced ? ns : undefined)}?${q.toString()}`;
-    return redactSecret(await this.json<KObj>(path), isSecrets(info));
+    return this.redact(await this.json<KObj>(path), info);
   }
 
   async getByKind(kind: string, name: string, ns?: string): Promise<KObj> {
     const info = resolveKind(kind);
-    return redactSecret(
-      await this.json<KObj>(itemPath(info.apiVersion, info.resource, name, info.namespaced ? ns : undefined)),
-      isSecrets(info),
-    );
+    return this.redact(await this.json<KObj>(itemPath(info.apiVersion, info.resource, name, info.namespaced ? ns : undefined)), info);
   }
 
   async podLogs(ns: string, name: string, opts: { container?: string; tailLines?: number; previous?: boolean } = {}): Promise<string> {
@@ -298,26 +303,30 @@ export class OpenShiftClient {
   async scale(kind: string, ns: string, name: string, replicas: number, dryRun: boolean): Promise<KObj> {
     const info = resolveKind(kind);
     const path = `${itemPath(info.apiVersion, info.resource, name, ns)}/scale${dryRun ? "?dryRun=All" : ""}`;
-    return redactSecret(
+    return this.redact(
       await this.json<KObj>(path, {
         method: "PATCH",
         headers: { "Content-Type": "application/merge-patch+json" },
         body: JSON.stringify({ spec: { replicas } }),
       }),
-      isSecrets(info),
+      info,
     );
   }
 
   /** Trigger a rolling restart by stamping the pod template (strategic merge). */
   async rolloutRestart(ns: string, name: string, dryRun: boolean): Promise<KObj> {
     const path = `${itemPath("apps/v1", "deployments", name, ns)}${dryRun ? "?dryRun=All" : ""}`;
-    return this.json<KObj>(path, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/strategic-merge-patch+json" },
-      body: JSON.stringify({
-        spec: { template: { metadata: { annotations: { "kubectl.kubernetes.io/restartedAt": new Date().toISOString() } } } },
+    // The PATCH answers with the whole Deployment (env values included): redacted like any other read.
+    return this.redact(
+      await this.json<KObj>(path, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/strategic-merge-patch+json" },
+        body: JSON.stringify({
+          spec: { template: { metadata: { annotations: { "kubectl.kubernetes.io/restartedAt": new Date().toISOString() } } } },
+        }),
       }),
-    });
+      KINDS.deployment,
+    );
   }
 
   /** Server-side apply a manifest (create or update). Returns the applied object's identity. */
@@ -370,7 +379,7 @@ export class OpenShiftClient {
           }),
         })
       : await this.json<Record<string, unknown>>(path, { method: "DELETE" });
-    return redactSecret(out, isSecrets(info));
+    return this.redact(out, info);
   }
 
   /**

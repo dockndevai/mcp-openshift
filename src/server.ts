@@ -15,7 +15,7 @@ export const ALL_TOOLS: ToolDef[] = [...readTools, ...writeTools, ...adminTools]
 
 export function buildServer(config: AppConfig): { server: McpServer; client: OpenShiftClient; enabled: string[] } {
   const policy = new SecurityPolicy(config.security);
-  const client = new OpenShiftClient(config.connection);
+  const client = new OpenShiftClient(config.connection, { redactObjects: config.security.redactObjects });
 
   const server = new McpServer({ name: "openshift", version: "0.3.0" });
   const guard = new GuardClient(loadGuardConfig());
@@ -39,7 +39,7 @@ export function buildServer(config: AppConfig): { server: McpServer; client: Ope
           const callCtx: ToolContext = { ...ctx, confirm: confirmer.forCall(tool.name, args ?? {}) };
           return await tool.handler(args ?? {}, callCtx);
         } catch (err) {
-          return toErrorResult(err);
+          return toErrorResult(err, policy);
         }
       },
     );
@@ -48,7 +48,7 @@ export function buildServer(config: AppConfig): { server: McpServer; client: Ope
   return { server, client, enabled };
 }
 
-function toErrorResult(err: unknown) {
+function toErrorResult(err: unknown, policy: SecurityPolicy) {
   let message: string;
   if (err instanceof PolicyError) {
     message = `Policy denied: ${err.message}`;
@@ -64,5 +64,6 @@ function toErrorResult(err: unknown) {
   } else {
     message = String(err);
   }
-  return { content: [{ type: "text" as const, text: message }], isError: true };
+  // The API server can echo submitted values in an error message.
+  return { content: [{ type: "text" as const, text: policy.redactObjectText(message) }], isError: true };
 }

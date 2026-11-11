@@ -35,6 +35,12 @@ export interface SecurityConfig {
    * explicitly `false`; `OPENSHIFT_REDACT_LOGS=false` turns it off.
    */
   redactLogs?: boolean;
+  /**
+   * Mask credential-shaped content in the objects the read tools return (env values by variable name, ConfigMap entries,
+   * Route TLS keys, event messages, API error text; best effort, see src/redact.ts). On unless this is explicitly `false`;
+   * `OPENSHIFT_REDACT_OBJECTS=false` turns it off. Secret values are redacted regardless of this setting.
+   */
+  redactObjects?: boolean;
 }
 
 export class PolicyError extends Error {
@@ -64,6 +70,11 @@ export class SecurityPolicy {
   /** Applies the log-redaction setting to text a workload wrote (pod logs). */
   redactLogOutput(text: string): string {
     return this.config.redactLogs === false ? text : redactLogText(text);
+  }
+
+  /** Free text taken from an API error: masked like logs unless `redactObjects` is false. */
+  redactObjectText(text: string): string {
+    return this.config.redactObjects === false ? text : redactLogText(text);
   }
 
   isCapabilityEnabled(capability: Capability): boolean {
