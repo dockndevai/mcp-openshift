@@ -31,7 +31,13 @@ export const writeTools: ToolDef[] = [
       const { dryRun } = policy.guard({ tool: "scale", capability: "write", namespace: ns });
       if (dryRun) return textResult(`[dry-run] Would scale ${kind}/${name} in ${ns} to ${replicas}.`);
       if (replicas === 0) {
-        const ok = await confirm.confirm({ action: `scale ${kind} to 0 (stop it)`, target: `${ns}/${name}` });
+        const ok = await confirm.confirm({
+          action: `scale ${kind} to 0 (stop it)`,
+          target: `${ns}/${name}`,
+          // uid@resourceVersion of the workload. Controller status updates also bump resourceVersion (fails closed).
+          // The scale PATCH itself carries no precondition, so a change after the second probe is not caught.
+          probe: () => client.resourceVersion(kind, name, ns),
+        });
         if (!ok.approved) return textResult(`Scale cancelled — ${ok.reason}.`);
       }
       return jsonResult(await client.scale(kind, ns, name, replicas, false));
@@ -86,7 +92,15 @@ export const writeTools: ToolDef[] = [
         { tool: "apply_resource", command: `kubectl apply ${manifest.kind}/${md.name ?? "?"} -n ${md.namespace ?? "default"}`, context: target },
         confirm,
       );
-      const ok = await confirm.confirm({ action: "apply (create/update) resource", target });
+      const kind = manifest.kind as string;
+      const ok = await confirm.confirm({
+        action: "apply (create/update) resource",
+        target,
+        // uid@resourceVersion of the existing object; undefined (and so must stay undefined) when it will be created.
+        // Limit: pins the live object, not the manifest content (that is bound by the fingerprint). The server-side
+        // apply request itself carries no precondition, so a change after the second probe is not caught.
+        probe: md.name ? () => client.resourceVersion(kind, md.name as string, md.namespace, manifest.apiVersion as string | undefined) : undefined,
+      });
       if (!ok.approved) return textResult(`Apply cancelled — ${ok.reason}.`);
       return jsonResult(await client.apply(manifest, false));
     },

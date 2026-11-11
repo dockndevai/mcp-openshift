@@ -90,6 +90,20 @@ function redactList(obj: KObj): KObj {
   return obj;
 }
 
+/** `uid@resourceVersion` of an object, or undefined when either is missing. */
+export function versionToken(obj: KObj | undefined): string | undefined {
+  const m = (obj?.metadata ?? {}) as { uid?: string; resourceVersion?: string };
+  return m.uid && m.resourceVersion ? `${m.uid}@${m.resourceVersion}` : undefined;
+}
+
+/** Inverse of {@link versionToken}. */
+export function parseVersionToken(token: string | undefined): { uid: string; resourceVersion: string } | undefined {
+  if (!token) return undefined;
+  const i = token.indexOf("@");
+  if (i <= 0 || i === token.length - 1) return undefined;
+  return { uid: token.slice(0, i), resourceVersion: token.slice(i + 1) };
+}
+
 export interface ApplyResult {
   kind?: string;
   name?: string;
@@ -264,9 +278,54 @@ export class OpenShiftClient {
   }
 
   // ---- destructive ----
-  async deleteResource(kind: string, name: string, ns: string | undefined, dryRun: boolean): Promise<Record<string, unknown>> {
+  /**
+   * Delete a resource. When `expectedVersion` (a token from {@link resourceVersion}) is given, it is sent as
+   * DeleteOptions preconditions (uid + resourceVersion), so the API server refuses (409) if the object was
+   * replaced or modified after the human approved it.
+   */
+  async deleteResource(
+    kind: string,
+    name: string,
+    ns: string | undefined,
+    dryRun: boolean,
+    expectedVersion?: string,
+  ): Promise<Record<string, unknown>> {
     const info = resolveKind(kind);
     const path = `${itemPath(info.apiVersion, info.resource, name, info.namespaced ? ns : undefined)}${dryRun ? "?dryRun=All" : ""}`;
-    return this.json<Record<string, unknown>>(path, { method: "DELETE" });
+    const pin = parseVersionToken(expectedVersion);
+    if (!pin) return this.json<Record<string, unknown>>(path, { method: "DELETE" });
+    return this.json<Record<string, unknown>>(path, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        apiVersion: "v1",
+        kind: "DeleteOptions",
+        preconditions: { uid: pin.uid, resourceVersion: pin.resourceVersion },
+      }),
+    });
+  }
+
+  /**
+   * Version token for an exact object: `metadata.uid@metadata.resourceVersion`, or undefined if it does not exist
+   * (404). Any write to the object (including status updates by controllers) bumps resourceVersion, so a busy
+   * object may need the action re-issued; that fails closed. The uid distinguishes a delete + recreate under the
+   * same name. Other errors (401/403, transport) throw.
+   */
+  async resourceVersion(
+    kind: string,
+    name: string,
+    ns: string | undefined,
+    apiVersion?: string,
+  ): Promise<string | undefined> {
+    const info = resolveKind(kind);
+    try {
+      const obj = await this.json<KObj>(
+        itemPath(apiVersion || info.apiVersion, info.resource, name, info.namespaced ? ns : undefined),
+      );
+      return versionToken(obj);
+    } catch (err) {
+      if (err instanceof OpenShiftError && err.status === 404) return undefined;
+      throw err;
+    }
   }
 }

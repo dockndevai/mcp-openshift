@@ -21,6 +21,16 @@ privileged automation and grant it the least it needs.
 - **Gate mutations.** Creating/updating (`apply_resource`) needs `OPENSHIFT_ALLOW_APPLY=true`;
   deleting needs `admin` mode **and** `OPENSHIFT_ALLOW_DELETE=true`. Both also prompt a human to
   confirm via MCP elicitation, as does scaling a workload to zero.
+- **Require a human for destructive ops.** Set `OPENSHIFT_REQUIRE_HUMAN_APPROVAL=true` so
+  `delete_resource`, `apply_resource` and scale-to-zero are refused when the client cannot show an
+  approval prompt. Each approval is bound to the exact tool and arguments (fingerprint) and to the target
+  object's `metadata.uid` + `metadata.resourceVersion` (for `apply_resource`, the existing object's, or
+  "absent" when it will be created); if the object changed while the human was deciding, the action is
+  refused. `delete_resource` also sends the approved uid and resourceVersion to the API server as delete
+  preconditions. Deleting a namespace or project also asks the human to type its name. Any write to the
+  object, including controller status updates, changes its resourceVersion, so a busy object may need the
+  action re-issued. Approval receipts are written to the audit log (`"audit":"approval"`, with `approvedBy`
+  = `human` or `flag-only`).
 - **Preview with dry-run.** `OPENSHIFT_DRY_RUN=true` sends writes with Kubernetes `dryRun=All`: the
   API validates and runs admission but persists nothing.
 - **Secrets are redacted.** Secret `data` values never reach the model — only the keys and byte sizes.
