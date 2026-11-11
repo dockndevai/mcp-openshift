@@ -7,6 +7,8 @@
  * for the authenticated user.
  */
 
+import { redactLogText } from "./redact.js";
+
 export type Capability = "read" | "write" | "admin";
 export type AccessMode = "read-only" | "read-write" | "admin";
 
@@ -28,6 +30,11 @@ export interface SecurityConfig {
   auditLog: boolean;
   /** Refuse destructive ops that no human can approve (no elicitation support) instead of trusting the flags alone. */
   requireHumanApproval: boolean;
+  /**
+   * Mask credential-shaped text in pod logs before it is returned (best effort, see src/redact.ts). On unless this is
+   * explicitly `false`; `OPENSHIFT_REDACT_LOGS=false` turns it off.
+   */
+  redactLogs?: boolean;
 }
 
 export class PolicyError extends Error {
@@ -52,6 +59,11 @@ export class SecurityPolicy {
 
   get mode(): AccessMode {
     return this.config.mode;
+  }
+
+  /** Applies the log-redaction setting to text a workload wrote (pod logs). */
+  redactLogOutput(text: string): string {
+    return this.config.redactLogs === false ? text : redactLogText(text);
   }
 
   isCapabilityEnabled(capability: Capability): boolean {
