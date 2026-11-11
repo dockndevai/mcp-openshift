@@ -33,6 +33,7 @@ export const writeTools: ToolDef[] = [
       if (replicas === 0) {
         const ok = await confirm.confirm({
           action: `scale ${kind} to 0 (stop it)`,
+          reversible: true,
           target: `${ns}/${name}`,
           // uid@resourceVersion of the workload. Controller status updates also bump resourceVersion (fails closed).
           // The scale PATCH itself carries no precondition, so a change after the second probe is not caught.
