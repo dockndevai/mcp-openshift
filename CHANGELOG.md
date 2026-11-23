@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-23
+
+### Maintenance
+- Bumped `undici` from 8.12.4 to 8.13.1 and `vitest` from 5.1.0 to 5.1.1 (both patch, within existing `^8.12.2` / `^5.0.5` ranges) via `npm update`.
+- No `npm audit --audit-level=high` advisories were present; two pre-existing moderate-severity advisories in `hono`/`@hono/node-server` (dev/transitive, GHSA-qv5m-9pm6-hqp3, GHSA-jpvv-r467-5p4w, GHSA-4m76-xfj5-7975, GHSA-h7mg-cq63-vhpq, GHSA-3gg2-335m-rxc6, GHSA-46wx-v44x-9hh2, GHSA-4h7h-rv7c-7m2v) remain and were left as-is since they are below the high/critical threshold for this routine maintenance pass.
+
 ## [0.3.0] - 2026-11-11
 
 ### Security
